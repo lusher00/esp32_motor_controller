@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Arduino
+*.hex
+*.elf
+*.bin
+*.map
+build/
+.build/
+
+# Xcode (if using)
+*.xcworkspace
+xcuserdata/
+*.xcuserstate
+DerivedData/
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Temporary files
+*~
+*.swp
+*.swo
