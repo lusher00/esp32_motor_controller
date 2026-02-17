@@ -2,6 +2,7 @@
 #include "motor_control.h"
 #include "led_animation.h"
 #include "pov_display.h"
+#include "debug.h"
 
 // ============================================================================
 // CRC-16/XMODEM IMPLEMENTATION
@@ -525,6 +526,67 @@ bool executeCommand(const Packet& packet, uint8_t* responseBuffer, size_t* respo
         }
         return false;
       }
+      
+      if (sendAck) {
+        *responseLength = buildAckPacket(responseBuffer, packet.command);
+      }
+      return true;
+    }
+    
+    // ========================================================================
+    // DEBUG COMMANDS
+    // ========================================================================
+    
+    case CMD_SET_DEBUG_FLAG: {
+      if (packet.payloadLength != 2) {
+        if (sendAck) {
+          *responseLength = buildNackPacket(responseBuffer, packet.command, ERR_INVALID_LENGTH);
+        }
+        return false;
+      }
+      
+      uint8_t flagId = packet.payload[0];
+      bool enable = (packet.payload[1] != 0);
+      
+      switch (flagId) {
+        case DEBUG_FLAG_MOTOR: setDebugFlag("motor", enable); break;
+        case DEBUG_FLAG_ENCODER: setDebugFlag("encoder", enable); break;
+        case DEBUG_FLAG_POV: setDebugFlag("pov", enable); break;
+        case DEBUG_FLAG_BLE: setDebugFlag("ble", enable); break;
+        case DEBUG_FLAG_COMMANDS: setDebugFlag("commands", enable); break;
+        case DEBUG_FLAG_TIMING: setDebugFlag("timing", enable); break;
+        case DEBUG_FLAG_TELEMETRY: setDebugFlag("telemetry", enable); break;
+        case DEBUG_FLAG_SYNC: setDebugFlag("sync", enable); break;
+        case DEBUG_FLAG_ALL: setDebugFlag("all", enable); break;
+        default:
+          if (sendAck) {
+            *responseLength = buildNackPacket(responseBuffer, packet.command, ERR_OUT_OF_RANGE);
+          }
+          return false;
+      }
+      
+      if (sendAck) {
+        *responseLength = buildAckPacket(responseBuffer, packet.command);
+      }
+      return true;
+    }
+    
+    case CMD_GET_ISR_STATS: {
+      // Build stats packet: 6 uint32 values
+      uint8_t stats[24];
+      memcpy(&stats[0], &isrDebugCounters.encoder_transitions, 4);
+      memcpy(&stats[4], &isrDebugCounters.sync_pulses, 4);
+      memcpy(&stats[8], &isrDebugCounters.debounce_rejects, 4);
+      memcpy(&stats[12], &isrDebugCounters.pov_updates, 4);
+      memcpy(&stats[16], &isrDebugCounters.last_pulse_width, 4);
+      memcpy(&stats[20], &isrDebugCounters.last_avg_pulse_width, 4);
+      
+      *responseLength = buildPacket(responseBuffer, CMD_STATUS_RESPONSE, stats, 24);
+      return true;
+    }
+    
+    case CMD_RESET_ISR_STATS: {
+      resetISRStats();
       
       if (sendAck) {
         *responseLength = buildAckPacket(responseBuffer, packet.command);

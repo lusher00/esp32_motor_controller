@@ -78,6 +78,22 @@ enum PacketState {
 #define CMD_UPLOAD_FRAME_DATA    0x77  // Payload: uint16 (frame_num) + uint8 (column) + 34*3 bytes (RGB data)
 #define CMD_UPLOAD_FRAME_END     0x78  // No payload
 
+// Debug Commands (0x90 - 0x9F)
+#define CMD_SET_DEBUG_FLAG       0x90  // Payload: uint8 (flag_id) + uint8 (enable)
+#define CMD_GET_ISR_STATS        0x91  // No payload - returns ISR stats
+#define CMD_RESET_ISR_STATS      0x92  // No payload
+
+// Debug flag IDs
+#define DEBUG_FLAG_MOTOR         0
+#define DEBUG_FLAG_ENCODER       1
+#define DEBUG_FLAG_POV           2
+#define DEBUG_FLAG_BLE           3
+#define DEBUG_FLAG_COMMANDS      4
+#define DEBUG_FLAG_TIMING        5
+#define DEBUG_FLAG_TELEMETRY     6
+#define DEBUG_FLAG_SYNC          7
+#define DEBUG_FLAG_ALL           255
+
 // Response Commands (0x80 - 0xFF)
 #define CMD_ACK                  0x80  // Payload: uint8 (original command ID)
 #define CMD_NACK                 0x81  // Payload: uint8 (original command ID) + uint8 (error code)

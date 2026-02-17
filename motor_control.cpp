@@ -3,6 +3,7 @@
 #include "led_animation.h"
 #include "commands.h"
 #include "pov_display.h"
+#include "debug.h"
 
 // Global variables
 Preferences prefs;
@@ -46,6 +47,7 @@ void IRAM_ATTR encoderISR() {
   
   // Debounce
   if (currentTime - lastInterruptTime < DEBOUNCE_US) {
+    isrDebugCounters.debounce_rejects++;
     return;
   }
   
@@ -55,6 +57,7 @@ void IRAM_ATTR encoderISR() {
   
   // Always count total transitions
   encoderCount++;
+  isrDebugCounters.encoder_transitions++;
   
   // Check if this looks like a sync pulse
   bool isSync = false;
@@ -62,6 +65,7 @@ void IRAM_ATTR encoderISR() {
     isSync = true;
     syncDetected = true;
     syncPulseWidth = pulseWidth;
+    isrDebugCounters.sync_pulses++;
   } else {
     // Valid pulse - count it and update running average
     validPulseCount++;
@@ -74,8 +78,13 @@ void IRAM_ATTR encoderISR() {
     }
   }
   
+  // Update debug counters (ISR-safe)
+  isrDebugCounters.last_pulse_width = pulseWidth;
+  isrDebugCounters.last_avg_pulse_width = avgPulseWidth;
+  
   // Update POV display
   povEncoderUpdate(isSync);
+  isrDebugCounters.pov_updates++;
 }
 
 void initMotorControl() {
@@ -86,79 +95,79 @@ void initMotorControl() {
   pinMode(MOTOR_PWM_PIN, OUTPUT);
   pinMode(MOTOR_DIR_PIN, OUTPUT);
   digitalWrite(MOTOR_DIR_PIN, motorDirection ? HIGH : LOW);
-  Serial.println("✓ Motor pins configured");
+  DEBUG_INFO("✓ Motor pins configured");
   
   // Configure encoder pin with pullup and interrupt
   pinMode(ENCODER_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(ENCODER_PIN), encoderISR, CHANGE);
-  Serial.println("✓ Encoder interrupt attached (Pin 12)");
+  DEBUG_INFOF("✓ Encoder interrupt attached (Pin %d)", ENCODER_PIN);
   
   // Configure heartbeat
   pinMode(HEARTBEAT_PIN, OUTPUT);
-  Serial.println("✓ Heartbeat configured");
+  DEBUG_INFO("✓ Heartbeat configured");
 }
 
 void handleMotorCommand(char cmd, int value) {
   switch(cmd) {
     case 'M': // Set target RPM (0-1500)
       targetRPM = constrain(value, 0, 1500);
-      Serial.print("Target RPM set to: ");
-      Serial.println(targetRPM);
+      DEBUG_MOTORF("Target RPM set to: %.1f", targetRPM);
+      
       saveConfig();
       break;
       
     case 'D': // Set direction (0=backward, 1=forward)
       motorDirection = (value != 0);
       digitalWrite(MOTOR_DIR_PIN, motorDirection ? HIGH : LOW);
-      Serial.print("Direction: ");
-      Serial.println(motorDirection ? "FORWARD" : "BACKWARD");
+      DEBUG_MOTORF("Direction: %s", motorDirection ? "FORWARD" : "BACKWARD");
+      
       saveConfig();
       break;
       
     case 'E': // Enable/disable motor (0=off, 1=on)
       motorEnabled = (value != 0);
-      Serial.println(motorEnabled ? "Motor ENABLED" : "Motor DISABLED");
+      DEBUG_MOTOR(motorEnabled ? "Motor ENABLED" : "Motor DISABLED");
       break;
       
     case 'P': // Set Kp gain (value / 10)
       Kp = value / 10.0;
-      Serial.print("Kp set to: ");
-      Serial.println(Kp);
+      DEBUG_MOTORF("Kp set to: %.2f", Kp);
+      
       saveConfig();
       break;
       
     case 'I': // Set Ki gain (value / 100)
       Ki = value / 100.0;
-      Serial.print("Ki set to: ");
-      Serial.println(Ki);
+      DEBUG_MOTORF("Ki set to: %.3f", Ki);
+      
       saveConfig();
       break;
       
     case 'K': // Set Kd gain (value / 100)
       Kd = value / 100.0;
-      Serial.print("Kd set to: ");
-      Serial.println(Kd);
+      DEBUG_MOTORF("Kd set to: %.3f", Kd);
+      
       saveConfig();
       break;
       
     case 'L': // Set LED pattern (0-6)
       setLEDPattern(constrain(value, 0, 6));
-      Serial.print("LED pattern set to: ");
-      Serial.println(value);
+      DEBUG_INFOF("LED pattern set to: %d", value);
+      
       break;
       
     case 'C': // Save current config
       saveConfig();
-      Serial.println("Config saved");
+      DEBUG_INFO("✓ Config saved");
       break;
       
     case 'R': // Reset to defaults
       resetConfig();
-      Serial.println("Config reset to defaults");
+      DEBUG_INFO("✓ Config reset to defaults");
       break;
       
     default:
-      Serial.println("Unknown command");
+      DEBUG_WARN("Unknown command");
       break;
   }
 }
@@ -174,7 +183,7 @@ void saveConfig() {
   
   prefs.end();
   
-  Serial.println("✓ Config saved to flash");
+  DEBUG_INFO("✓ Config saved to flash");
 }
 
 void loadConfig() {
@@ -188,13 +197,7 @@ void loadConfig() {
   
   prefs.end();
   
-  Serial.println("✓ Config loaded from flash");
-  Serial.print("  Kp: "); Serial.println(Kp);
-  Serial.print("  Ki: "); Serial.println(Ki);
-  Serial.print("  Kd: "); Serial.println(Kd);
-  Serial.print("  Target RPM: "); Serial.println(targetRPM);
-  Serial.print("  Direction: "); Serial.println(motorDirection ? "FORWARD" : "BACKWARD");
-}
+  DEBUG_INFO("✓ Config loaded from flash");
 
 void resetConfig() {
   Kp = 2.0;
@@ -218,14 +221,6 @@ void calculateRPMTask() {
     
     // Enable PID once we have stable pulse width measurements
     if (!pidEnabled && validPulseCount > 20 && avgPulseWidth > 0) {
-      pidEnabled = true;
-      Serial.println("PID ENABLED - Sync pulse detection active");
-      Serial.print("Average pulse width: ");
-      Serial.print(avgPulseWidth);
-      Serial.println(" us");
-    }
-  }
-}
 
 void pidTask() {
   if (millis() - lastPIDUpdate >= PID_INTERVAL) {
@@ -263,18 +258,6 @@ void pidTask() {
     analogWrite(MOTOR_PWM_PIN, (int)pwmOutput);
     
     lastPIDUpdate = millis();
-    
-    // Debug output
-    Serial.print("Target: ");
-    Serial.print(targetRPM);
-    Serial.print(" | Current: ");
-    Serial.print(currentRPM);
-    Serial.print(" | PWM: ");
-    Serial.print((int)pwmOutput);
-    Serial.print(" | Valid Pulses: ");
-    Serial.println(validPulseCount);
-  }
-}
 
 void heartbeatTask() {
   if (millis() - lastBeat >= HEARTBEAT_INTERVAL) {
@@ -290,22 +273,22 @@ void heartbeatTask() {
 
 void setTargetRPM(float rpm) {
   targetRPM = constrain(rpm, 0, 1500);
-  Serial.print("Target RPM set to: ");
-  Serial.println(targetRPM);
+  DEBUG_MOTORF("Target RPM set to: %.1f", targetRPM);
+  
   saveConfig();
 }
 
 void setMotorDirection(bool forward) {
   motorDirection = forward;
   digitalWrite(MOTOR_DIR_PIN, motorDirection ? HIGH : LOW);
-  Serial.print("Direction: ");
-  Serial.println(motorDirection ? "FORWARD" : "BACKWARD");
+  DEBUG_MOTORF("Direction: %s", motorDirection ? "FORWARD" : "BACKWARD");
+  
   saveConfig();
 }
 
 void setMotorEnable(bool enable) {
   motorEnabled = enable;
-  Serial.println(motorEnabled ? "Motor ENABLED" : "Motor DISABLED");
+  DEBUG_MOTOR(motorEnabled ? "Motor ENABLED" : "Motor DISABLED");
 }
 
 void setDirectPWM(uint8_t pwm) {
@@ -313,8 +296,7 @@ void setDirectPWM(uint8_t pwm) {
   pidEnabled = false;
   analogWrite(MOTOR_PWM_PIN, pwm);
   pwmOutput = pwm;
-  Serial.print("Direct PWM set to: ");
-  Serial.println(pwm);
+  DEBUG_MOTORF("Direct PWM set to: %d", pwm);
 }
 
 void emergencyStop() {
@@ -322,33 +304,29 @@ void emergencyStop() {
   pidEnabled = false;
   analogWrite(MOTOR_PWM_PIN, 0);
   pwmOutput = 0;
-  Serial.println("EMERGENCY STOP");
+  DEBUG_ERROR("EMERGENCY STOP");
 }
 
 void setPIDEnable(bool enable) {
   pidEnabled = enable;
-  Serial.print("PID ");
-  Serial.println(enable ? "ENABLED" : "DISABLED");
+  DEBUG_MOTORF("PID %s", enable ? "ENABLED" : "DISABLED");
 }
 
 void setKp(float kp) {
   Kp = kp;
-  Serial.print("Kp set to: ");
-  Serial.println(Kp);
+  DEBUG_MOTORF("Kp set to: %.2f", Kp);
   saveConfig();
 }
 
 void setKi(float ki) {
   Ki = ki;
-  Serial.print("Ki set to: ");
-  Serial.println(Ki);
+  DEBUG_MOTORF("Ki set to: %.3f", Ki);
   saveConfig();
 }
 
 void setKd(float kd) {
   Kd = kd;
-  Serial.print("Kd set to: ");
-  Serial.println(Kd);
+  DEBUG_MOTORF("Kd set to: %.3f", Kd);
   saveConfig();
 }
 
@@ -356,12 +334,7 @@ void setPIDParams(float kp, float ki, float kd) {
   Kp = kp;
   Ki = ki;
   Kd = kd;
-  Serial.print("PID params set - Kp: ");
-  Serial.print(Kp);
-  Serial.print(", Ki: ");
-  Serial.print(Ki);
-  Serial.print(", Kd: ");
-  Serial.println(Kd);
+  DEBUG_MOTORF("PID params set - Kp: %.2f, Ki: %.3f, Kd: %.3f", Kp, Ki, Kd);
   saveConfig();
 }
 

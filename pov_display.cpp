@@ -1,5 +1,6 @@
 #include "pov_display.h"
 #include "config.h"
+#include "debug.h"
 #include <Adafruit_NeoPixel.h>
 
 // Global POV state
@@ -27,7 +28,7 @@ void initPOV() {
     povState.animations[i].frames = nullptr;
   }
   
-  Serial.println("✓ POV Display initialized");
+  DEBUG_INFO("✓ POV Display initialized");
 }
 
 void IRAM_ATTR povEncoderUpdate(bool isSync) {
@@ -78,9 +79,9 @@ void setPOVEnable(bool enable) {
   povState.enabled = enable;
   
   if (enable) {
-    Serial.println("POV Display ENABLED");
+    DEBUG_POV("POV Display ENABLED");
   } else {
-    Serial.println("POV Display DISABLED");
+    DEBUG_POV("POV Display DISABLED");
     // Clear strip
     strip.clear();
     strip.show();
@@ -93,12 +94,12 @@ bool getPOVEnable() {
 
 void selectAnimation(uint8_t animationId) {
   if (animationId >= MAX_ANIMATIONS) {
-    Serial.println("Invalid animation ID");
+    DEBUG_WARN("Invalid animation ID");
     return;
   }
   
   if (!povState.animations[animationId].active) {
-    Serial.println("Animation not loaded");
+    DEBUG_WARN("Animation not loaded");
     return;
   }
   
@@ -107,17 +108,17 @@ void selectAnimation(uint8_t animationId) {
   povState.revolutionCount = 0;
   povState.currentColumn = 0;
   
-  Serial.print("Selected animation: ");
-  Serial.println(animationId);
+  DEBUG_POVF("Selected animation: %d", animationId);
+  
 }
 
 void setFrameTiming(uint16_t revolutionsPerFrame) {
   POVAnimation* anim = &povState.animations[povState.currentAnimation];
   anim->revolutionsPerFrame = revolutionsPerFrame;
   
-  Serial.print("Frame timing set to ");
-  Serial.print(revolutionsPerFrame);
-  Serial.println(" revolutions per frame");
+  DEBUG_POVF("Frame timing set to %d revolutions per frame", revolutionsPerFrame);
+  
+  
 }
 
 uint32_t getRevolutionCount() {
@@ -126,7 +127,7 @@ uint32_t getRevolutionCount() {
 
 void resetRevolutionCount() {
   povState.revolutionCount = 0;
-  Serial.println("Revolution count reset");
+  DEBUG_POV("Revolution count reset");
 }
 
 uint16_t getCurrentFrame() {
@@ -135,7 +136,7 @@ uint16_t getCurrentFrame() {
 
 bool startAnimationUpload(uint8_t animationId, uint16_t totalFrames) {
   if (animationId >= MAX_ANIMATIONS) {
-    Serial.println("Invalid animation ID");
+    DEBUG_WARN("Invalid animation ID");
     return false;
   }
   
@@ -149,7 +150,7 @@ bool startAnimationUpload(uint8_t animationId, uint16_t totalFrames) {
   POVFrame* frames = (POVFrame*)malloc(frameSize);
   
   if (!frames) {
-    Serial.println("Failed to allocate memory for animation");
+    DEBUG_ERROR("Failed to allocate memory for animation");
     return false;
   }
   
@@ -172,28 +173,28 @@ bool startAnimationUpload(uint8_t animationId, uint16_t totalFrames) {
   uploadTotalFrames = totalFrames;
   uploadInProgress = true;
   
-  Serial.print("Started upload for animation ");
-  Serial.print(animationId);
-  Serial.print(" with ");
-  Serial.print(totalFrames);
-  Serial.println(" frames");
+  DEBUG_POVF("Started upload for animation %d with %d frames", animationId, totalFrames);
+  
+  
+  
+  
   
   return true;
 }
 
 bool uploadFrameData(uint16_t frameNum, uint8_t column, const uint8_t* rgbData) {
   if (!uploadInProgress) {
-    Serial.println("No upload in progress");
+    DEBUG_WARN("No upload in progress");
     return false;
   }
   
   if (frameNum >= uploadTotalFrames) {
-    Serial.println("Frame number out of range");
+    DEBUG_WARN("Frame number out of range");
     return false;
   }
   
   if (column >= POV_COLUMNS) {
-    Serial.println("Column number out of range");
+    DEBUG_WARN("Column number out of range");
     return false;
   }
   
@@ -209,14 +210,14 @@ bool uploadFrameData(uint16_t frameNum, uint8_t column, const uint8_t* rgbData) 
 
 bool endAnimationUpload() {
   if (!uploadInProgress) {
-    Serial.println("No upload in progress");
+    DEBUG_WARN("No upload in progress");
     return false;
   }
   
   uploadInProgress = false;
   
-  Serial.print("Upload complete for animation ");
-  Serial.println(uploadAnimationId);
+  DEBUG_POVF("Upload complete for animation %d", uploadAnimationId);
+  
   
   return true;
 }
@@ -268,12 +269,12 @@ void loadTestAnimation() {
   
   endAnimationUpload();
   
-  Serial.println("Test animation loaded");
+  DEBUG_INFO("✓ Test animation loaded");
 }
 
 void loadClockAnimation() {
   // TODO: Implement clock face with hour/minute hands
   // This would require multiple frames (60 frames for seconds, or 3600 for smooth minute hand)
   
-  Serial.println("Clock animation not yet implemented");
+  DEBUG_WARN("Clock animation not yet implemented");
 }

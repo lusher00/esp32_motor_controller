@@ -23,9 +23,14 @@
 #include "telemetry.h"
 #include "commands.h"
 #include "pov_display.h"
+#include "debug.h"
 
 // Packet parser for Serial
 PacketParser serialParser;
+
+// ISR stats print interval
+unsigned long lastISRStatsPrint = 0;
+const unsigned long ISR_STATS_INTERVAL = 5000;  // Print every 5 seconds if encoder debug enabled
 
 void setup() {
   Serial.begin(115200);
@@ -36,6 +41,9 @@ void setup() {
   Serial.println("ESP32 Motor Controller v2.0");
   Serial.println("=================================");
   Serial.println("Booting...");
+  
+  // Initialize debug system first
+  initDebug();
   
   // Initialize all subsystems
   initMotorControl();
@@ -50,6 +58,8 @@ void setup() {
   Serial.println("\n=================================");
   Serial.println("READY - Waiting for connections");
   Serial.println("=================================\n");
+  
+  DEBUG_INFO("Type 'help' for debug commands");
 }
 
 void loop() {
@@ -59,7 +69,60 @@ void loop() {
   calculateRPMTask();
   pidTask();
   handleSerialPackets();
+  handleSerialCommands();
   povDisplayTask();
+  
+  // Print ISR stats periodically if encoder debug enabled
+  if (debugFlags.encoder && (millis() - lastISRStatsPrint >= ISR_STATS_INTERVAL)) {
+    printISRStats();
+    lastISRStatsPrint = millis();
+  }
+}
+
+void handleSerialCommands() {
+  // Handle ASCII debug commands (non-packet mode)
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    
+    if (cmd.length() == 0) return;
+    
+    // Don't process if it looks like binary data
+    if (cmd[0] == 0xAA) return;
+    
+    if (cmd == "help") {
+      Serial.println("\n=== Debug Commands ===");
+      Serial.println("debug <flag> on/off  - Toggle debug flags");
+      Serial.println("  Flags: motor, encoder, pov, ble, commands, timing, sync, all");
+      Serial.println("stats                - Print ISR statistics");
+      Serial.println("reset_stats          - Reset ISR statistics");
+      Serial.println("status               - Print debug status");
+      Serial.println("help                 - Show this help");
+      Serial.println("======================\n");
+    }
+    else if (cmd == "stats") {
+      printISRStats();
+    }
+    else if (cmd == "reset_stats") {
+      resetISRStats();
+    }
+    else if (cmd == "status") {
+      printDebugStatus();
+    }
+    else if (cmd.startsWith("debug ")) {
+      // Parse: debug <flag> <on|off>
+      int firstSpace = cmd.indexOf(' ');
+      int secondSpace = cmd.indexOf(' ', firstSpace + 1);
+      
+      if (secondSpace > 0) {
+        String flag = cmd.substring(firstSpace + 1, secondSpace);
+        String state = cmd.substring(secondSpace + 1);
+        
+        bool enable = (state == "on" || state == "1");
+        setDebugFlag(flag.c_str(), enable);
+      }
+    }
+  }
 }
 
 void povDisplayTask() {
