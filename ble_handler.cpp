@@ -1,11 +1,15 @@
 #include "ble_handler.h"
 #include "motor_control.h"
 #include "config.h"
+#include "commands.h"
 
 BLEServer* pServer = NULL;
 BLECharacteristic* pMotorCharacteristic = NULL;
 BLECharacteristic* pTelemetryCharacteristic = NULL;
 bool deviceConnected = false;
+
+// Packet parser for BLE
+PacketParser bleParser;
 
 class ServerCallbacks: public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
@@ -25,18 +29,43 @@ class MotorCallbacks: public BLECharacteristicCallbacks {
     std::string value = pCharacteristic->getValue();
     
     if (value.length() > 0) {
-      char cmd = value[0];
-      int val = 0;
-      if (value.length() > 1) {
-        val = atoi(value.substr(1).c_str());
+      // Try packet protocol first
+      bool packetReceived = false;
+      Packet packet;
+      
+      for (size_t i = 0; i < value.length(); i++) {
+        if (bleParser.processByte(value[i], packet)) {
+          packetReceived = true;
+          
+          // Execute command
+          uint8_t responseBuffer[PACKET_MAX_LENGTH];
+          size_t responseLength = 0;
+          
+          executeCommand(packet, responseBuffer, &responseLength, true);
+          
+          // Send response via telemetry characteristic if generated
+          if (responseLength > 0 && pTelemetryCharacteristic) {
+            pTelemetryCharacteristic->setValue(responseBuffer, responseLength);
+            pTelemetryCharacteristic->notify();
+          }
+        }
       }
       
-      Serial.print("Command received: ");
-      Serial.println(cmd);
-      Serial.print("Value: ");
-      Serial.println(val);
-      
-      handleMotorCommand(cmd, val);
+      // Fall back to legacy command format if no packet detected
+      if (!packetReceived && value.length() > 0) {
+        char cmd = value[0];
+        int val = 0;
+        if (value.length() > 1) {
+          val = atoi(value.substr(1).c_str());
+        }
+        
+        Serial.print("Legacy command received: ");
+        Serial.println(cmd);
+        Serial.print("Value: ");
+        Serial.println(val);
+        
+        handleMotorCommand(cmd, val);
+      }
     }
   }
 };

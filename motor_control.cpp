@@ -1,6 +1,7 @@
 #include "motor_control.h"
 #include "config.h"
 #include "led_animation.h"
+#include "commands.h"
 
 // Global variables
 Preferences prefs;
@@ -292,7 +293,116 @@ void heartbeatTask() {
     lastBeat = millis();
     beatState = !beatState;
     digitalWrite(HEARTBEAT_PIN, beatState);
-//    int value = digitalRead(ENCODER_PIN);
-//    Serial.println(value);  // Should print 1 (HIGH) when floating 
   }
 }
+
+// ============================================================================
+// NEW PACKET-BASED API FUNCTIONS
+// ============================================================================
+
+void setTargetRPM(float rpm) {
+  targetRPM = constrain(rpm, 0, 1500);
+  Serial.print("Target RPM set to: ");
+  Serial.println(targetRPM);
+  saveConfig();
+}
+
+void setMotorDirection(bool forward) {
+  motorDirection = forward;
+  digitalWrite(MOTOR_DIR_PIN, motorDirection ? HIGH : LOW);
+  Serial.print("Direction: ");
+  Serial.println(motorDirection ? "FORWARD" : "BACKWARD");
+  saveConfig();
+}
+
+void setMotorEnable(bool enable) {
+  motorEnabled = enable;
+  Serial.println(motorEnabled ? "Motor ENABLED" : "Motor DISABLED");
+}
+
+void setDirectPWM(uint8_t pwm) {
+  // Direct PWM mode bypasses PID
+  pidEnabled = false;
+  analogWrite(MOTOR_PWM_PIN, pwm);
+  pwmOutput = pwm;
+  Serial.print("Direct PWM set to: ");
+  Serial.println(pwm);
+}
+
+void emergencyStop() {
+  motorEnabled = false;
+  pidEnabled = false;
+  analogWrite(MOTOR_PWM_PIN, 0);
+  pwmOutput = 0;
+  Serial.println("EMERGENCY STOP");
+}
+
+void setPIDEnable(bool enable) {
+  pidEnabled = enable;
+  Serial.print("PID ");
+  Serial.println(enable ? "ENABLED" : "DISABLED");
+}
+
+void setKp(float kp) {
+  Kp = kp;
+  Serial.print("Kp set to: ");
+  Serial.println(Kp);
+  saveConfig();
+}
+
+void setKi(float ki) {
+  Ki = ki;
+  Serial.print("Ki set to: ");
+  Serial.println(Ki);
+  saveConfig();
+}
+
+void setKd(float kd) {
+  Kd = kd;
+  Serial.print("Kd set to: ");
+  Serial.println(Kd);
+  saveConfig();
+}
+
+void setPIDParams(float kp, float ki, float kd) {
+  Kp = kp;
+  Ki = ki;
+  Kd = kd;
+  Serial.print("PID params set - Kp: ");
+  Serial.print(Kp);
+  Serial.print(", Ki: ");
+  Serial.print(Ki);
+  Serial.print(", Kd: ");
+  Serial.println(Kd);
+  saveConfig();
+}
+
+float getCurrentRPM() {
+  return currentRPM;
+}
+
+void getPIDParams(float& kp, float& ki, float& kd) {
+  kp = Kp;
+  ki = Ki;
+  kd = Kd;
+}
+
+void getEncoderCounts(uint32_t& total, uint32_t& valid) {
+  total = encoderCount;
+  valid = validPulseCount;
+}
+
+void getStatusData(StatusData& status) {
+  status.currentRPM = currentRPM;
+  status.targetRPM = targetRPM;
+  status.pwmOutput = pwmOutput;
+  status.motorEnabled = motorEnabled ? 1 : 0;
+  status.motorDirection = motorDirection ? 1 : 0;
+  status.pidEnabled = pidEnabled ? 1 : 0;
+  status.encoderCount = encoderCount;
+  status.validPulseCount = validPulseCount;
+  status.Kp = Kp;
+  status.Ki = Ki;
+  status.Kd = Kd;
+}
+

@@ -1,15 +1,18 @@
 /*
- * ESP32 Motor Controller v1.0
+ * ESP32 Motor Controller v2.0
  * 
  * Features:
- * - BLE control interface
+ * - Unified packet-based command protocol (BLE, WiFi, UART)
  * - PID speed control with encoder feedback
- * - Sync pulse detection (64 transitions/rev)
+ * - Direct PWM control mode
+ * - Sync pulse detection (34 transitions/rev)
  * - NeoPixel animation
  * - Telemetry streaming
  * - Flash-based configuration storage
  * 
- * Author: Your Name
+ * Encoder disk: 16 posts (12°) + 1 wide post (20°) + voids (16×8° + 1×20°)
+ * 
+ * Author: Claude + User
  * Date: 2026
  */
 
@@ -18,6 +21,10 @@
 #include "ble_handler.h"
 #include "led_animation.h"
 #include "telemetry.h"
+#include "commands.h"
+
+// Packet parser for Serial
+PacketParser serialParser;
 
 void setup() {
   Serial.begin(115200);
@@ -25,7 +32,7 @@ void setup() {
   // Wait for serial connection and print boot message
   delay(2000);
   Serial.println("\n\n=================================");
-  Serial.println("ESP32 Motor Controller v1.0");
+  Serial.println("ESP32 Motor Controller v2.0");
   Serial.println("=================================");
   Serial.println("Booting...");
   
@@ -46,4 +53,26 @@ void loop() {
   sendTelemetryTask();
   calculateRPMTask();
   pidTask();
+  handleSerialPackets();
+}
+
+void handleSerialPackets() {
+  while (Serial.available()) {
+    uint8_t byte = Serial.read();
+    
+    Packet packet;
+    if (serialParser.processByte(byte, packet)) {
+      // Valid packet received
+      uint8_t responseBuffer[PACKET_MAX_LENGTH];
+      size_t responseLength = 0;
+      
+      // Execute command with ACK enabled
+      executeCommand(packet, responseBuffer, &responseLength, true);
+      
+      // Send response if generated
+      if (responseLength > 0) {
+        Serial.write(responseBuffer, responseLength);
+      }
+    }
+  }
 }

@@ -24,13 +24,31 @@ extern bool pidEnabled;
 
 // Function prototypes
 void initMotorControl();
-void handleMotorCommand(char cmd, int value);
+void handleMotorCommand(char cmd, int value);  // Legacy - for BLE backward compatibility
 void calculateRPMTask();
 void pidTask();
 void heartbeatTask();
 void saveConfig();
 void loadConfig();
 void resetConfig();
+
+// New packet-based API functions
+void setTargetRPM(float rpm);
+void setMotorDirection(bool forward);
+void setMotorEnable(bool enable);
+void setDirectPWM(uint8_t pwm);
+void emergencyStop();
+void setPIDEnable(bool enable);
+void setKp(float kp);
+void setKi(float ki);
+void setKd(float kd);
+void setPIDParams(float kp, float ki, float kd);
+
+// Query functions
+float getCurrentRPM();
+void getPIDParams(float& kp, float& ki, float& kd);
+void getEncoderCounts(uint32_t& total, uint32_t& valid);
+void getStatusData(struct StatusData& status);
 
 // Interrupt handler
 void IRAM_ATTR encoderISR();

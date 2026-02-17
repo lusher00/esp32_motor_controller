@@ -1,136 +1,218 @@
-# ESP32 Motor Controller v1.0
+# ESP32 Motor Controller v2.0
 
-Professional ESP32-based motor controller with BLE interface, PID speed control, and encoder feedback.
+A robust motor control system with PID feedback, multi-interface command protocol, and encoder-based RPM measurement.
 
 ## Features
 
-- **BLE Control Interface** - Wireless motor control via Bluetooth Low Energy
-- **PID Speed Control** - Precise RPM control with tunable PID gains
-- **Encoder Feedback** - 64 transitions/rev with sync pulse detection
-- **NeoPixel Animation** - 34 LED status display
-- **Telemetry Streaming** - Real-time sensor data via BLE
-- **Flash Configuration** - Settings persist across reboots
+- **Unified Packet Protocol**: Commands work identically over UART, BLE, and WiFi
+- **PID Speed Control**: Closed-loop RPM control with tunable parameters
+- **Direct PWM Mode**: Bypass PID for manual motor control
+- **Sync Pulse Detection**: Accurate RPM measurement using custom encoder disk
+- **Error Detection**: CRC-16/XMODEM checksums on all packets
+- **Optional ACKs**: Choose between fire-and-forget or confirmed delivery
+- **Configuration Storage**: Save/load settings to flash memory
+- **LED Animations**: Visual feedback via NeoPixel strip
+- **Telemetry Streaming**: Real-time status updates
 
-## Hardware Requirements
+## Hardware Setup
 
-- ESP32 development board
-- DC motor with H-bridge driver
-- Optical encoder (64 transitions/rev)
-- WS2812B LED strip (34 LEDs)
-- Temperature sensor (analog)
-- Distance sensor (analog)
+### Encoder Disk Geometry
+- **16 standard posts**: 12° wide each
+- **1 wide post**: 20° wide (sync marker)
+- **16 standard voids**: 8° wide each
+- **1 wide void**: 20° wide (sync pulse)
+- **Total**: 34 transitions per revolution
 
-## Pin Configuration
+### Pin Assignments
+- **ENCODER_PIN** (A5): Encoder input (requires external 10kΩ pull-up to 3.3V)
+- **MOTOR_PWM_PIN** (D3): Motor speed control (PWM)
+- **MOTOR_DIR_PIN** (D4): Motor direction control
+- **LED_PIN** (D13): NeoPixel data line
+- **HEARTBEAT_PIN** (LED_BUILTIN): Status indicator
 
-| Function | Pin |
-|----------|-----|
-| NeoPixel Data | 13 |
-| Encoder Input | 14 |
-| Motor PWM | 6 |
-| Motor Direction | 7 |
-| Temperature Sensor | A0 |
-| Distance Sensor | A1 |
-| Heartbeat LED | LED_BUILTIN |
+## Packet Protocol
+
+### Structure
+```
+[START] [LENGTH] [COMMAND] [PAYLOAD...] [CRC16_H] [CRC16_L] [END]
+  0xAA   1 byte    1 byte    0-1018 bytes  2 bytes          0x55
+```
+
+- **START_BYTE**: 0xAA
+- **LENGTH**: Total packet length (6 to 1024 bytes)
+- **COMMAND**: Command ID
+- **PAYLOAD**: Command-specific data
+- **CRC16**: CRC-16/XMODEM checksum (big-endian)
+- **END_BYTE**: 0x55
+
+### Command Reference
+
+See `commands.h` for complete command definitions.
+
+**Motor Control (0x10-0x1F)**
+- `CMD_SET_TARGET_RPM` (0x10): Set target RPM
+- `CMD_SET_DIRECTION` (0x11): Set motor direction
+- `CMD_SET_MOTOR_ENABLE` (0x12): Enable/disable motor
+- `CMD_SET_PWM_DIRECT` (0x13): Set PWM directly (bypasses PID)
+- `CMD_EMERGENCY_STOP` (0x14): Emergency stop
+
+**PID Control (0x20-0x2F)**
+- `CMD_SET_PID_ENABLE` (0x20): Enable/disable PID
+- `CMD_SET_KP` (0x21): Set proportional gain
+- `CMD_SET_KI` (0x22): Set integral gain
+- `CMD_SET_KD` (0x23): Set derivative gain
+- `CMD_SET_PID_ALL` (0x24): Set all PID gains at once
+
+**Configuration (0x30-0x3F)**
+- `CMD_SAVE_CONFIG` (0x30): Save to flash
+- `CMD_LOAD_CONFIG` (0x31): Load from flash
+- `CMD_RESET_CONFIG` (0x32): Reset to defaults
+- `CMD_SET_LED_PATTERN` (0x33): Set LED pattern
+
+**Query (0x40-0x4F)**
+- `CMD_GET_STATUS` (0x40): Get full status
+- `CMD_GET_RPM` (0x41): Get current RPM
+- `CMD_GET_PID_PARAMS` (0x42): Get PID gains
+- `CMD_GET_ENCODER_COUNT` (0x43): Get encoder counts
+
+## Usage Examples
+
+### Python (UART)
+
+```python
+import serial
+import struct
+from packet_test import build_packet, send_command
+
+ser = serial.Serial('COM3', 115200)
+
+# Enable PID mode
+send_command(ser, 0x20, struct.pack('B', 1))
+
+# Set target RPM to 1000
+send_command(ser, 0x10, struct.pack('<f', 1000.0))
+
+# Enable motor
+send_command(ser, 0x12, struct.pack('B', 1))
+```
+
+Run the test script:
+```bash
+python packet_test.py COM3
+```
+
+### Arduino/C++ (UART)
+
+```cpp
+#include "commands.h"
+
+uint8_t buffer[32];
+float rpm = 1000.0;
+
+// Build packet
+size_t len = buildPacket(buffer, CMD_SET_TARGET_RPM, 
+                         (uint8_t*)&rpm, sizeof(float));
+
+// Send over Serial
+Serial.write(buffer, len);
+```
+
+### BLE
+
+BLE supports both packet protocol and legacy ASCII commands:
+
+**Packet mode** (recommended): Same binary packets as UART
+
+**Legacy mode**: ASCII commands like `M1000`, `D1`, `E1`
+
+## Operating Modes
+
+### PID Mode
+1. Enable PID: `CMD_SET_PID_ENABLE` = 1
+2. Set target RPM: `CMD_SET_TARGET_RPM`
+3. Enable motor: `CMD_SET_MOTOR_ENABLE` = 1
+4. Controller maintains target speed automatically
+
+### Direct PWM Mode
+1. Disable PID: `CMD_SET_PID_ENABLE` = 0
+2. Set PWM value: `CMD_SET_PWM_DIRECT` (0-255)
+3. Enable motor: `CMD_SET_MOTOR_ENABLE` = 1
+4. Motor runs at fixed duty cycle
+
+## Encoder Disk Pattern
+
+```
+Degree layout (one revolution):
+  12° post, 8° void (×16) = 320°
+  20° post, 20° void (×1) = 40°
+  Total = 360°
+
+Transitions: 34 per revolution
+  - 32 from standard posts
+  - 2 from wide post/void (sync marker)
+```
+
+Sync detection: Wide void (20°) is ~2.5× longer than normal void (8°)
+
+## PID Tuning
+
+Default values:
+- **Kp = 2.0**
+- **Ki = 0.5**
+- **Kd = 0.1**
+
+Tuning steps:
+1. Set Ki=0, Kd=0
+2. Increase Kp until oscillation
+3. Set Kp to 50-60% of oscillation point
+4. Increase Ki slowly to eliminate steady-state error
+5. Add small Kd to reduce overshoot
 
 ## Installation
 
-1. Open `esp32_motor_controller.ino` in Arduino IDE
-2. Install required libraries:
-   - Adafruit_NeoPixel
-   - ESP32 BLE Arduino (included with ESP32 board support)
-3. Select board: **ESP32 Dev Module**
-4. Upload to your ESP32
+1. Install Arduino IDE with ESP32 support
+2. Install libraries:
+   - Adafruit NeoPixel
+   - Preferences (built-in)
+3. Upload to Arduino Nano ESP32
+4. Connect hardware with 10kΩ pull-up on encoder pin
 
-## BLE Commands
+## Files
 
-Send commands via the Motor Control characteristic (`beb5483e-36e1-4688-b7f5-ea07361b26a8`):
-
-| Command | Format | Description | Example |
-|---------|--------|-------------|---------|
-| M | M\<value\> | Set target RPM (0-1500) | `M500` = 500 RPM |
-| D | D\<0/1\> | Set direction (0=back, 1=fwd) | `D1` = forward |
-| E | E\<0/1\> | Enable/disable motor | `E1` = enable |
-| P | P\<value\> | Set Kp gain (value/10) | `P25` = Kp=2.5 |
-| I | I\<value\> | Set Ki gain (value/100) | `I50` = Ki=0.50 |
-| K | K\<value\> | Set Kd gain (value/100) | `K10` = Kd=0.10 |
-| L | L\<0-6\> | Set LED pattern (see below) | `L2` = Segments |
-| C | C | Save config to flash | `C` |
-| R | R | Reset to defaults | `R` |
-
-## LED Patterns (Optimized for POV at 1000 RPM)
-
-The 34-LED strip creates stunning visual effects when spinning:
-
-| Pattern | Command | Effect |
-|---------|---------|--------|
-| 0 | `L0` | **Rainbow Wheel** - Full color wheel visible when spinning |
-| 1 | `L1` | **Speedometer** - Shows current RPM with color gradient |
-| 2 | `L2` | **Segments** - 4 colored pie slices (red/green/blue/yellow) |
-| 3 | `L3` | **Comet** - Single bright dot with trailing tail |
-| 4 | `L4` | **Strobe** - Pulsing glow effect |
-| 5 | `L5` | **Spiral** - Alternating bands create hypnotic spiral |
-| 6 | `L6` | **Fire** - Flickering warm colors |
-
-Patterns auto-cycle every 10 seconds, or manually select with `L` command.
-
-## Telemetry Data
-
-Subscribe to the Telemetry characteristic (`1c95d5e3-d8f7-413a-bf3d-7a2e5d7be87e`) to receive JSON data every 100ms:
-
-```json
-{
-  "temp": 25.3,
-  "dist": 45.2,
-  "speed": 128,
-  "rpm": 487.5,
-  "enc": 12450
-}
-```
-
-## Project Structure
-
-```
-esp32_motor_controller/
-├── esp32_motor_controller.ino  # Main sketch
-├── config.h                    # Pin definitions & constants
-├── motor_control.h/cpp         # Motor & PID control
-├── ble_handler.h/cpp           # BLE communication
-├── led_animation.h/cpp         # NeoPixel animations
-├── telemetry.h/cpp             # Sensor reading & streaming
-└── README.md                   # This file
-```
-
-## Tuning PID
-
-1. Start with Kp=2.0, Ki=0.5, Kd=0.1 (defaults)
-2. Set a target RPM with `M500`
-3. Monitor response via Serial Monitor
-4. Adjust gains:
-   - **Kp** too high → oscillation
-   - **Ki** too high → overshoot
-   - **Kd** too high → sluggish response
+- `commands.h/cpp` - Packet protocol implementation
+- `motor_control.h/cpp` - PID and motor control
+- `ble_handler.h/cpp` - Bluetooth interface
+- `led_animation.h/cpp` - NeoPixel effects
+- `telemetry.h/cpp` - Status reporting
+- `config.h` - Pin definitions and constants
+- `packet_test.py` - Python test utility
 
 ## Troubleshooting
 
-**Motor doesn't start:**
-- Verify motor is enabled (`E1`)
-- Check target RPM is > 0 (`M500`)
-- Ensure encoder is connected properly
+**No encoder pulses:**
+- Check 10kΩ pull-up resistor to 3.3V
+- Verify sensor alignment with disk
+- Monitor ENCODER_PIN voltage (should toggle 0-3.3V)
 
-**Erratic speed:**
-- Reduce PID gains
-- Check encoder wiring
-- Verify power supply is stable
+**RPM inaccurate:**
+- Verify disk has correct pattern (34 transitions/rev)
+- Check sync pulse detection in Serial Monitor
+- Adjust SYNC_THRESHOLD if needed
 
-**BLE won't connect:**
-- Device name: `ESP32_Motor_Control`
-- Check phone's Bluetooth is enabled
-- Try power cycling the ESP32
+**CRC errors:**
+- Confirm baud rate is 115200
+- Check USB cable quality (Nano ESP32 connectors can be flaky)
+- Ensure common ground
+
+**PID unstable:**
+- Reduce Kp gain
+- Check mechanical binding
+- Verify adequate power supply
 
 ## License
 
-MIT License - feel free to use in your projects!
+MIT License
 
 ## Author
 
-Your Name - 2026
+Created February 2026

@@ -21,9 +21,11 @@ const unsigned long TELEMETRY_INTERVAL = 100; // 100ms = 10Hz
 const unsigned long ANIMATION_INTERVAL = 40;  // LED update rate
 
 // Encoder Constants
+// Disk geometry: 16 posts (12° each) + 1 wide post (20°) + voids (16×8° + 1×20°)
+// Total: 33 normal transitions + 1 sync transition = 34 transitions per revolution
 const unsigned long DEBOUNCE_US = 100;        // 100us debounce
-const float SYNC_THRESHOLD = 1.8;             // Sync pulse is ~2x normal pulse width
-const int VALID_TRANSITIONS_PER_REV = 63;     // 64 transitions - 1 sync pulse
+const float SYNC_THRESHOLD = 1.8;             // Sync pulse (20° void) is ~2x normal pulse width (8° void)
+const int VALID_TRANSITIONS_PER_REV = 34;     // Total transitions per revolution
 
 // BLE UUIDs
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
