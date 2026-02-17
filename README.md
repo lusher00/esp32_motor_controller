@@ -7,6 +7,7 @@ A robust motor control system with PID feedback, multi-interface command protoco
 - **Unified Packet Protocol**: Commands work identically over UART, BLE, and WiFi
 - **PID Speed Control**: Closed-loop RPM control with tunable parameters
 - **Direct PWM Mode**: Bypass PID for manual motor control
+- **POV Display**: Persistence of vision LED display with polar coordinate addressing
 - **Sync Pulse Detection**: Accurate RPM measurement using custom encoder disk
 - **Error Detection**: CRC-16/XMODEM checksums on all packets
 - **Optional ACKs**: Choose between fire-and-forget or confirmed delivery
@@ -125,6 +126,59 @@ BLE supports both packet protocol and legacy ASCII commands:
 
 **Legacy mode**: ASCII commands like `M1000`, `D1`, `E1`
 
+## POV Display System
+
+The system includes a Persistence of Vision (POV) display using the NeoPixel strip.
+
+**How it works:**
+- 34 LEDs mounted on a spinning arm
+- Each LED traces a ring at a different radius
+- Encoder synchronizes column updates with rotation angle
+- Images stored as [34 columns × 34 LEDs × RGB]
+
+**Frame Buffer:**
+- Animations stored in flash memory
+- Each frame = 3,468 bytes (34 columns × 34 LEDs × 3 bytes RGB)
+- Multiple frames for animated content (e.g., clock with moving hands)
+
+**Timing:**
+- Updates triggered by encoder transitions (34 per revolution)
+- Frame rate controlled by "revolutions per frame"
+- Example: Clock with 60 frames at 1000 RPM = 1 frame per second
+
+**POV Commands:**
+
+```cpp
+CMD_SELECT_ANIMATION (0x70)     // Select which animation to display
+CMD_SET_FRAME_TIMING (0x71)     // Set revolutions per frame
+CMD_SET_POV_ENABLE (0x74)       // Enable/disable POV display
+CMD_UPLOAD_FRAME_START (0x76)   // Begin uploading animation
+CMD_UPLOAD_FRAME_DATA (0x77)    // Upload column data
+CMD_UPLOAD_FRAME_END (0x78)     // Finalize upload
+```
+
+**Creating POV Content:**
+
+Use the included Python script to upload images:
+
+```bash
+# Upload a polar coordinate image
+python pov_upload.py COM3 my_image.png
+
+# Or upload the built-in test pattern
+python pov_upload.py COM3
+```
+
+**Image Format:**
+- Create images in polar coordinates
+- Width = angular resolution (will be sampled to 34 columns)
+- Height = 34 pixels (one per LED, inner to outer)
+- Center of image = center of display
+
+**Pre-loaded Animations:**
+- Test pattern: Rainbow gradient (loaded at boot)
+- Clock: TODO - implement clock face with moving hands
+
 ## Operating Modes
 
 ### PID Mode
@@ -181,11 +235,13 @@ Tuning steps:
 
 - `commands.h/cpp` - Packet protocol implementation
 - `motor_control.h/cpp` - PID and motor control
+- `pov_display.h/cpp` - POV display system
 - `ble_handler.h/cpp` - Bluetooth interface
 - `led_animation.h/cpp` - NeoPixel effects
 - `telemetry.h/cpp` - Status reporting
 - `config.h` - Pin definitions and constants
 - `packet_test.py` - Python test utility
+- `pov_upload.py` - POV animation uploader
 
 ## Troubleshooting
 

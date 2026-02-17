@@ -2,6 +2,7 @@
 #include "config.h"
 #include "led_animation.h"
 #include "commands.h"
+#include "pov_display.h"
 
 // Global variables
 Preferences prefs;
@@ -61,7 +62,6 @@ void IRAM_ATTR encoderISR() {
     isSync = true;
     syncDetected = true;
     syncPulseWidth = pulseWidth;
-    Serial.println("SYNC");
   } else {
     // Valid pulse - count it and update running average
     validPulseCount++;
@@ -74,20 +74,8 @@ void IRAM_ATTR encoderISR() {
     }
   }
   
-  // Print high/low based on pin state
-  if (digitalRead(ENCODER_PIN) == HIGH) {
-    if (isSync) {
-      Serial.println("HIGH (SYNC)");
-    } else {
-      Serial.println("HIGH");
-    }
-  } else {
-    if (isSync) {
-      Serial.println("LOW (SYNC)");
-    } else {
-      Serial.println("LOW");
-    }
-  }
+  // Update POV display
+  povEncoderUpdate(isSync);
 }
 
 void initMotorControl() {

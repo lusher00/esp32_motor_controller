@@ -1,6 +1,7 @@
 #include "commands.h"
 #include "motor_control.h"
 #include "led_animation.h"
+#include "pov_display.h"
 
 // ============================================================================
 // CRC-16/XMODEM IMPLEMENTATION
@@ -383,6 +384,151 @@ bool executeCommand(const Packet& packet, uint8_t* responseBuffer, size_t* respo
       uint32_t total, valid;
       getEncoderCounts(total, valid);
       *responseLength = buildEncoderPacket(responseBuffer, total, valid);
+      return true;
+    }
+    
+    // ========================================================================
+    // POV DISPLAY COMMANDS
+    // ========================================================================
+    
+    case CMD_SELECT_ANIMATION: {
+      if (packet.payloadLength != 1) {
+        if (sendAck) {
+          *responseLength = buildNackPacket(responseBuffer, packet.command, ERR_INVALID_LENGTH);
+        }
+        return false;
+      }
+      
+      uint8_t animId = packet.payload[0];
+      selectAnimation(animId);
+      
+      if (sendAck) {
+        *responseLength = buildAckPacket(responseBuffer, packet.command);
+      }
+      return true;
+    }
+    
+    case CMD_SET_FRAME_TIMING: {
+      if (packet.payloadLength != 2) {
+        if (sendAck) {
+          *responseLength = buildNackPacket(responseBuffer, packet.command, ERR_INVALID_LENGTH);
+        }
+        return false;
+      }
+      
+      uint16_t revPerFrame;
+      memcpy(&revPerFrame, packet.payload, 2);
+      setFrameTiming(revPerFrame);
+      
+      if (sendAck) {
+        *responseLength = buildAckPacket(responseBuffer, packet.command);
+      }
+      return true;
+    }
+    
+    case CMD_GET_REVOLUTION_COUNT: {
+      uint32_t revCount = getRevolutionCount();
+      *responseLength = buildPacket(responseBuffer, CMD_REVOLUTION_RESPONSE, 
+                                    (uint8_t*)&revCount, sizeof(uint32_t));
+      return true;
+    }
+    
+    case CMD_RESET_REVOLUTION: {
+      resetRevolutionCount();
+      
+      if (sendAck) {
+        *responseLength = buildAckPacket(responseBuffer, packet.command);
+      }
+      return true;
+    }
+    
+    case CMD_SET_POV_ENABLE: {
+      if (packet.payloadLength != 1) {
+        if (sendAck) {
+          *responseLength = buildNackPacket(responseBuffer, packet.command, ERR_INVALID_LENGTH);
+        }
+        return false;
+      }
+      
+      bool enable = (packet.payload[0] != 0);
+      setPOVEnable(enable);
+      
+      if (sendAck) {
+        *responseLength = buildAckPacket(responseBuffer, packet.command);
+      }
+      return true;
+    }
+    
+    case CMD_GET_CURRENT_FRAME: {
+      uint16_t frameNum = getCurrentFrame();
+      *responseLength = buildPacket(responseBuffer, CMD_FRAME_RESPONSE, 
+                                    (uint8_t*)&frameNum, sizeof(uint16_t));
+      return true;
+    }
+    
+    case CMD_UPLOAD_FRAME_START: {
+      if (packet.payloadLength != 3) {
+        if (sendAck) {
+          *responseLength = buildNackPacket(responseBuffer, packet.command, ERR_INVALID_LENGTH);
+        }
+        return false;
+      }
+      
+      uint8_t animId = packet.payload[0];
+      uint16_t totalFrames;
+      memcpy(&totalFrames, &packet.payload[1], 2);
+      
+      if (!startAnimationUpload(animId, totalFrames)) {
+        if (sendAck) {
+          *responseLength = buildNackPacket(responseBuffer, packet.command, ERR_OUT_OF_RANGE);
+        }
+        return false;
+      }
+      
+      if (sendAck) {
+        *responseLength = buildAckPacket(responseBuffer, packet.command);
+      }
+      return true;
+    }
+    
+    case CMD_UPLOAD_FRAME_DATA: {
+      // Payload: uint16 frame_num + uint8 column + 102 bytes RGB data
+      if (packet.payloadLength != (2 + 1 + POV_LEDS * 3)) {
+        if (sendAck) {
+          *responseLength = buildNackPacket(responseBuffer, packet.command, ERR_INVALID_LENGTH);
+        }
+        return false;
+      }
+      
+      uint16_t frameNum;
+      memcpy(&frameNum, &packet.payload[0], 2);
+      uint8_t column = packet.payload[2];
+      const uint8_t* rgbData = &packet.payload[3];
+      
+      if (!uploadFrameData(frameNum, column, rgbData)) {
+        if (sendAck) {
+          *responseLength = buildNackPacket(responseBuffer, packet.command, ERR_INVALID_PAYLOAD);
+        }
+        return false;
+      }
+      
+      if (sendAck) {
+        *responseLength = buildAckPacket(responseBuffer, packet.command);
+      }
+      return true;
+    }
+    
+    case CMD_UPLOAD_FRAME_END: {
+      if (!endAnimationUpload()) {
+        if (sendAck) {
+          *responseLength = buildNackPacket(responseBuffer, packet.command, ERR_INVALID_COMMAND);
+        }
+        return false;
+      }
+      
+      if (sendAck) {
+        *responseLength = buildAckPacket(responseBuffer, packet.command);
+      }
       return true;
     }
     

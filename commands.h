@@ -67,6 +67,17 @@ enum PacketState {
 #define CMD_GET_PID_PARAMS       0x42  // No payload - returns Kp, Ki, Kd
 #define CMD_GET_ENCODER_COUNT    0x43  // No payload - returns encoder counts
 
+// POV Animation Commands (0x70 - 0x7F)
+#define CMD_SELECT_ANIMATION     0x70  // Payload: uint8 (animation ID)
+#define CMD_SET_FRAME_TIMING     0x71  // Payload: uint16 (revolutions per frame)
+#define CMD_GET_REVOLUTION_COUNT 0x72  // No payload - returns uint32
+#define CMD_RESET_REVOLUTION     0x73  // No payload
+#define CMD_SET_POV_ENABLE       0x74  // Payload: uint8 (0/1)
+#define CMD_GET_CURRENT_FRAME    0x75  // No payload - returns uint16
+#define CMD_UPLOAD_FRAME_START   0x76  // Payload: uint8 (animation_id) + uint16 (total_frames)
+#define CMD_UPLOAD_FRAME_DATA    0x77  // Payload: uint16 (frame_num) + uint8 (column) + 34*3 bytes (RGB data)
+#define CMD_UPLOAD_FRAME_END     0x78  // No payload
+
 // Response Commands (0x80 - 0xFF)
 #define CMD_ACK                  0x80  // Payload: uint8 (original command ID)
 #define CMD_NACK                 0x81  // Payload: uint8 (original command ID) + uint8 (error code)
@@ -74,6 +85,8 @@ enum PacketState {
 #define CMD_RPM_RESPONSE         0x83  // Payload: float (current RPM)
 #define CMD_PID_RESPONSE         0x84  // Payload: 3 floats (Kp, Ki, Kd)
 #define CMD_ENCODER_RESPONSE     0x85  // Payload: 2 uint32 (total count, valid count)
+#define CMD_REVOLUTION_RESPONSE  0x86  // Payload: uint32 (revolution count)
+#define CMD_FRAME_RESPONSE       0x87  // Payload: uint16 (current frame number)
 
 // Error Codes for NACK
 #define ERR_INVALID_COMMAND      0x01
@@ -113,6 +126,44 @@ struct __attribute__((packed)) StatusData {
   float Kp;
   float Ki;
   float Kd;
+};
+
+// ============================================================================
+// POV DISPLAY STRUCTURES
+// ============================================================================
+
+#define POV_COLUMNS 34          // Columns per revolution (matches encoder transitions)
+#define POV_LEDS 34             // LEDs in the strip
+#define MAX_POV_FRAMES 128      // Maximum frames per animation
+#define MAX_ANIMATIONS 8        // Maximum number of stored animations
+
+// Single column of LED data
+struct __attribute__((packed)) POVColumn {
+  uint8_t rgb[POV_LEDS][3];    // RGB for each LED (102 bytes)
+};
+
+// Complete frame (all columns for one revolution)
+struct POVFrame {
+  POVColumn columns[POV_COLUMNS];  // 34 columns × 102 bytes = 3,468 bytes
+};
+
+// Animation metadata
+struct POVAnimation {
+  uint8_t id;
+  uint16_t frameCount;
+  uint16_t revolutionsPerFrame;  // How many revolutions before advancing frame
+  bool active;
+  POVFrame* frames;              // Pointer to frames in flash/PSRAM
+};
+
+// POV runtime state
+struct POVState {
+  bool enabled;
+  uint8_t currentAnimation;
+  uint16_t currentFrame;
+  uint32_t revolutionCount;
+  uint8_t currentColumn;
+  POVAnimation animations[MAX_ANIMATIONS];
 };
 
 // ============================================================================

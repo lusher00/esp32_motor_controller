@@ -22,6 +22,7 @@
 #include "led_animation.h"
 #include "telemetry.h"
 #include "commands.h"
+#include "pov_display.h"
 
 // Packet parser for Serial
 PacketParser serialParser;
@@ -41,6 +42,10 @@ void setup() {
   initBLE();
   initLEDs();
   initTelemetry();
+  initPOV();
+  
+  // Load default test animation
+  loadTestAnimation();
   
   Serial.println("\n=================================");
   Serial.println("READY - Waiting for connections");
@@ -54,6 +59,15 @@ void loop() {
   calculateRPMTask();
   pidTask();
   handleSerialPackets();
+  povDisplayTask();
+}
+
+void povDisplayTask() {
+  // Display POV column (non-blocking, called frequently)
+  // The encoder ISR updates the column index, we just display it
+  if (getPOVEnable()) {
+    displayPOVColumn();
+  }
 }
 
 void handleSerialPackets() {
